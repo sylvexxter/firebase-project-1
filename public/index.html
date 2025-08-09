@@ -14,11 +14,15 @@
     /* Show sign-in only when signed out */
     .signed-out .guest-only { display: inline-block; }
     .signed-in .guest-only { display: none; }
+    /* Sticky footer layout */
+    html, body { height: 100%; }
+    body { min-height: 100vh; display: flex; flex-direction: column; }
+    main { flex: 1 0 auto; }
   </style>
 </head>
 <!-- Start signed out; JS toggles .signed-in/.signed-out to show/hide .authed-only -->
 <body class="signed-out">
-  <div class="container">
+  <main class="container">
     <!-- App header with auth buttons -->
     <header class="d-flex justify-content-between align-items-center mb-4">
       <h1 class="h3 m-0">My Secure Text Log</h1>
@@ -64,8 +68,13 @@
     <p class="text-muted mt-4">
       Tip: only signed-in users can see or add rows.
     </p>
-  </div>
-  
+
+  </main>
+
+  <footer class="text-center text-muted mt-4 py-3">
+    <a href="https://github.com/sylvexxter/firebase-project-1" target="_blank" rel="noopener noreferrer">@github.com/sylvexxter/firebase-project-1</a>
+  </footer>
+
   <!-- App logic: uses Firebase ES modules from the CDN -->
   <script type="module">
     // Import Firebase SDK modules

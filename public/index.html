@@ -15,7 +15,6 @@
     .signed-out .guest-only { display: inline-block; }
     .signed-in .guest-only { display: none; }
   </style>
-  <!-- Basic security headers can be set via Firebase Hosting; see firebase.json -->
 </head>
 <!-- Start signed out; JS toggles .signed-in/.signed-out to show/hide .authed-only -->
 <body class="signed-out">
@@ -107,7 +106,7 @@
     const db = getFirestore(app);
 
     // ES256 public key used to verify JWT signatures
-    const PUBLIC_ES256_KEY_PEM = `-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEcq937rbYJj70wz5zgSbvRvzucPId\ngPAt2ka8F9Rs/QRdhl4WyjxTvjx5pHWMLI218xzfsG/BOGQr5cSZZAApnw==\n-----END PUBLIC KEY-----`;
+    const PUBLIC_ES256_KEY_PEM = `-----BEGIN PUBLIC KEY-----\nMFYwEAYHKoZIzj0CAQYFK4EEAAoDQgAEMU1JFVEO9FkVr0r041GpAWzKvQi1TBYm\narJj3+aNeC2aK9GT7Hct1OJGWQGbUkNWTeUr+Ui09PjBit+AMYuHgA==\n-----END PUBLIC KEY-----`;
     const jwtPublicKeyPromise = importSPKI(PUBLIC_ES256_KEY_PEM, "ES256");
 
     // Cache DOM elements

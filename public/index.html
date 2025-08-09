@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Text Log (Firebase + Firestore)</title>
+  <!-- Bootstrap CSS for quick styling -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <!-- Minimal styles to toggle UI based on auth state -->
+  <style>
+    body { padding: 2rem; }
+    .signed-out .authed-only { display: none; }
+    .signed-in .authed-only { display: block; }
+    /* Show sign-in only when signed out */
+    .signed-out .guest-only { display: inline-block; }
+    .signed-in .guest-only { display: none; }
+  </style>
+  <!-- Basic security headers can be set via Firebase Hosting; see firebase.json -->
+</head>
+<!-- Start signed out; JS toggles .signed-in/.signed-out to show/hide .authed-only -->
+<body class="signed-out">
+  <div class="container">
+    <!-- App header with auth buttons -->
+    <header class="d-flex justify-content-between align-items-center mb-4">
+      <h1 class="h3 m-0">My Secure Text Log</h1>
+      <div>
+        <button id="signInBtn" class="btn btn-primary guest-only">Sign in with Google</button>
+        <button id="signOutBtn" class="btn btn-outline-secondary authed-only">Sign out</button>
+      </div>
+    </header>
+
+    <!-- Input form; visible only when signed in -->
+    <section class="card authed-only mb-4">
+      <div class="card-body">
+        <form id="textForm" class="row g-2">
+          <div class="col-12 col-md-9">
+            <input id="textInput" class="form-control" placeholder="Type something…" required />
+          </div>
+          <div class="col-12 col-md-3 d-grid">
+            <button class="btn btn-success" type="submit">Submit</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Live table of submissions (realtime) -->
+    <section class="card authed-only">
+      <div class="card-body">
+        <h2 class="h5">Submissions</h2>
+        <div class="table-responsive">
+          <table class="table table-striped align-middle">
+            <thead>
+              <tr>
+                <th scope="col">Text</th>
+                <th scope="col">Submitted At</th>
+                <th scope="col">By</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <p class="text-muted mt-4">
+      Tip: only signed-in users can see or add rows.
+    </p>
+  </div>
+  
+  <!-- App logic: uses Firebase ES modules from the CDN -->
+  <script type="module">
+    // Import Firebase SDK modules
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import {
+      getAuth,
+      GoogleAuthProvider,
+      signInWithPopup,
+      signOut,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      addDoc,
+      serverTimestamp,
+      query,
+      where,
+      onSnapshot
+    } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+    // Import jose for JWT signature verification only (no claims check)
+    import { compactVerify, importSPKI } from "https://cdn.jsdelivr.net/npm/jose@5.2.3/+esm";
+
+    // Firebase project configuration (replace with yours)
+    const firebaseConfig = {
+      apiKey: "AIzaSyCk8IXWrZIn9JLVZsbg_oGXfFEkLpFCbHw",
+      authDomain: "seraphic-music-216919.firebaseapp.com",
+      projectId: "seraphic-music-216919",
+      storageBucket: "seraphic-music-216919.firebasestorage.app",
+      messagingSenderId: "472770699893",
+      appId: "1:472770699893:web:82cf77812ab4fbb8d00e3c",
+      measurementId: "G-R72XTELWXV"
+    };
+
+    // Initialize Firebase services
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // ES256 public key used to verify JWT signatures
+    const PUBLIC_ES256_KEY_PEM = `-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEcq937rbYJj70wz5zgSbvRvzucPId\ngPAt2ka8F9Rs/QRdhl4WyjxTvjx5pHWMLI218xzfsG/BOGQr5cSZZAApnw==\n-----END PUBLIC KEY-----`;
+    const jwtPublicKeyPromise = importSPKI(PUBLIC_ES256_KEY_PEM, "ES256");
+
+    // Cache DOM elements
+    const bodyEl = document.body;
+    const signInBtn = document.getElementById("signInBtn");
+    const signOutBtn = document.getElementById("signOutBtn");
+    const textForm = document.getElementById("textForm");
+    const textInput = document.getElementById("textInput");
+    const rows = document.getElementById("rows");
+
+    // Set up Google auth provider and button handlers
+    const provider = new GoogleAuthProvider();
+    signInBtn.addEventListener("click", async () => {
+      await signInWithPopup(auth, provider);
+    });
+    signOutBtn.addEventListener("click", async () => {
+      await signOut(auth);
+    });
+
+    // Toggle UI based on auth state and (re)start realtime subscription
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        bodyEl.classList.remove("signed-out");
+        bodyEl.classList.add("signed-in");
+        startRealtimeTable(user.uid);
+      } else {
+        bodyEl.classList.remove("signed-in");
+        bodyEl.classList.add("signed-out");
+        if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+        rows.innerHTML = "";
+      }
+    });
+
+    // On submit, add a new document to the "submissions" collection
+    textForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const user = auth.currentUser;
+      if (!user) return alert("Please sign in first.");
+      const text = textInput.value.trim();
+      if (!text) return;
+      await addDoc(collection(db, "submissions"), {
+        text,
+        userId: user.uid,
+        userEmail: user.email || null,
+        userName: user.displayName || null,
+        createdAt: serverTimestamp()
+      });
+      textInput.value = "";
+      textInput.focus();
+    });
+
+    // Real-time table subscription (unsubscribe before re-subscribing)
+    let unsubscribe = null;
+    function startRealtimeTable(userId) {
+      if (unsubscribe) unsubscribe();
+      // Query only current user's docs; sort client-side by createdAt desc
+      const q = query(collection(db, "submissions"), where("userId", "==", userId));
+      // Listen for realtime updates and render rows (sorted locally)
+      rows.innerHTML = '<tr><td colspan="3" class="text-muted">Loading…</td></tr>';
+      unsubscribe = onSnapshot(
+        q,
+        (snap) => {
+          const docs = [];
+          snap.forEach((doc) => docs.push({ id: doc.id, ...doc.data() }));
+          docs.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+          rows.innerHTML = "";
+          if (docs.length === 0) {
+            rows.innerHTML = '<tr><td colspan="3" class="text-muted">No submissions yet.</td></tr>';
+            return;
+          }
+          for (const data of docs) {
+            const tr = document.createElement("tr");
+            const when = data.createdAt?.toDate?.().toLocaleString() || "";
+            tr.innerHTML = `
+              <td>${escapeHtml(data.text || "")}</td>
+              <td>${when}</td>
+              <td>${escapeHtml(data.userEmail || data.userName || "Unknown")}</td>
+            `;
+            rows.appendChild(tr);
+
+            // If text looks like a JWT and verifies with ES256 key, mark row in red
+            const textValue = data.text || "";
+            if (isLikelyJwt(textValue)) {
+              // Debug visibility to understand verification outcome
+              console.debug("JWT detected, attempting verify (ES256)", textValue.slice(0, 25) + "...");
+              isJwtVerifiedEs256(textValue).then((ok) => {
+                console.debug("JWT verify result:", ok);
+                if (ok) tr.classList.add("table-danger", "bg-danger-subtle");
+              }).catch((err) => {
+                console.debug("JWT verify error:", err);
+              });
+            }
+          }
+        },
+        (error) => {
+          rows.innerHTML = `<tr><td colspan="3" class="text-danger small">${escapeHtml(error.message)}</td></tr>`;
+        }
+      );
+    }
+
+    // Escape user-provided strings to prevent XSS
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    // Heuristic: three base64url segments separated by dots
+    function isLikelyJwt(s) {
+      return /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test((s || "").trim());
+    }
+
+    // Verify JWT signature with ES256 public key (ignores exp/nbf/claims); return boolean
+    async function isJwtVerifiedEs256(token) {
+      try {
+        const publicKey = await jwtPublicKeyPromise;
+        const { protectedHeader } = await compactVerify(token, publicKey);
+        if (protectedHeader?.alg !== "ES256") return false;
+        return true;
+      } catch (err) {
+        // Uncomment for debugging:
+        // console.debug('JWT verify failed:', err);
+        return false;
+      }
+    }
+  </script>
+</body>
+</html>
+
+

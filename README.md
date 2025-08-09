@@ -27,8 +27,6 @@ Rules restrict access so users only read documents where `userId == request.auth
   2. The app imports the public key with `importSPKI` and runs `compactVerify`.
   3. If the signature is valid and `alg` is ES256, the row is visually marked.
 
-Important: This verification is signature-only. It doesn’t validate claims like `exp`, `nbf`, `aud`, or `iss`. Do not rely on this for authorization. Server-side validation is recommended for production use.
-
 Example (from `public/index.html`):
 
 ```js
@@ -48,24 +46,3 @@ async function isJwtVerifiedEs256(token) {
   }
 }
 ```
-
-## Local development
-- Serve locally with Firebase emulators:
-
-```bash
-firebase emulators:start --only hosting
-```
-
-## Deploy
-```bash
-firebase deploy --only hosting,firestore
-```
-
-## Repository
-- GitHub: `https://github.com/sylvexxter/firebase-project-1`
-
-## Notes
-- Firebase Web `apiKey` in client code is not a secret; protect server credentials and any service accounts.
-- For server-only logic (e.g., admin tasks, secure token validation), use Cloud Functions and store secrets in Firebase/Google Cloud configuration.
-
-
